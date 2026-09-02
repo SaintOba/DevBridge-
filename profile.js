@@ -5,12 +5,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         await window.AppReady;
     }
     
+    await loadMessages();
     await loadAppliedOpportunities();
     loadProfileData();
     loadProfileSkills();
     loadRecommendedOpportunities();
     await loadWorkFilesAndSubmissions();
-    loadJourneyProgress();
+    await loadJourneyProgress();
     
     // Edit profile button
     document.getElementById('edit-profile-btn')?.addEventListener('click', openEditProfileModal);
@@ -27,6 +28,77 @@ document.addEventListener('DOMContentLoaded', async function() {
         workSubmissionForm.addEventListener('submit', submitWork);
     }
 });
+
+async function loadMessages() {
+    const container = document.getElementById('messages-list');
+    const countEl = document.getElementById('messages-count');
+    if (!container) return;
+
+    const session = Auth.getSession();
+    if (!session || !AppData.user.id) {
+        container.innerHTML = `
+            <div class="empty-state-profile">
+                <div class="empty-icon">🔒</div>
+                <h3>Log in to see your messages</h3>
+                <a href="login.html" class="cta-button primary">Log In</a>
+            </div>
+        `;
+        return;
+    }
+
+    try {
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/messages?recipient_id=eq.${AppData.user.id}&order=created_at.desc`, {
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+        const messages = response.ok ? await response.json() : [];
+
+        if (countEl) countEl.textContent = `(${messages.length})`;
+
+        if (!messages.length) {
+            container.innerHTML = `
+                <div class="empty-state-profile">
+                    <div class="empty-icon">📭</div>
+                    <h3>No messages yet</h3>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = messages.map(m => `
+            <div style="border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; margin-bottom:12px; ${m.is_read ? '' : 'background:#f0f9ff; border-color:#bae6fd;'}">
+                <div style="font-size:12px; color:#666; margin-bottom:6px;">
+                    ${new Date(m.created_at).toLocaleString()} ${m.is_read ? '' : '• <strong style="color:#0369a1;">New</strong>'}
+                </div>
+                <div>${(m.content || '').replace(/</g, '&lt;')}</div>
+            </div>
+        `).join('');
+
+        // Mark unread messages as read
+        const unread = messages.filter(m => !m.is_read);
+        if (unread.length) {
+            await Promise.all(unread.map(m => fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/messages?id=eq.${m.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ is_read: true })
+            })));
+        }
+    } catch (error) {
+        console.error('Error loading messages:', error);
+        container.innerHTML = `
+            <div class="empty-state-profile">
+                <div class="empty-icon">⚠️</div>
+                <h3>Could not load messages</h3>
+            </div>
+        `;
+    }
+}
 
 function loadProfileData() {
     document.getElementById('profile-name').textContent = AppData.user.name;
@@ -138,17 +210,27 @@ async function loadAppliedOpportunities() {
     const container = document.getElementById('applied-opportunities');
     
     try {
-        // Fetch applications from Supabase for current user
-        const userEmail = AppData.user.email;
-        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/applications?email=eq.${encodeURIComponent(userEmail)}&order=created_at.desc`, {
+        // Fetch applications from Supabase for current user (by real account ID, not email text)
+        const session = Auth.getSession();
+        if (!session) {
+            container.innerHTML = `
+                <div class="empty-state-profile">
+                    <div class="empty-icon">🔒</div>
+                    <h3>Log in to see your applications</h3>
+                    <a href="login.html" class="cta-button primary">Log In</a>
+                </div>
+            `;
+            return;
+        }
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/applications?user_id=eq.${AppData.user.id}&order=created_at.desc`, {
             headers: {
                 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
-                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM'
+                'Authorization': `Bearer ${session.access_token}`
             }
         });
         
         const applications = response.ok ? await response.json() : [];
-        console.log('📝 Loaded applications for', userEmail, ':', applications);
+        console.log('📝 Loaded applications for', AppData.user.email, ':', applications);
         
         if (!applications || applications.length === 0) {
             container.innerHTML = `
@@ -307,11 +389,12 @@ function handleEditProfile(e) {
 
 async function fetchUserApplications() {
     try {
-        const userEmail = AppData.user.email;
-        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/applications?email=eq.${encodeURIComponent(userEmail)}&order=created_at.desc`, {
+        const session = Auth.getSession();
+        if (!session || !AppData.user.id) return [];
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/applications?user_id=eq.${AppData.user.id}&order=created_at.desc`, {
             headers: {
                 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
-                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM'
+                'Authorization': `Bearer ${session.access_token}`
             }
         });
         return response.ok ? await response.json() : [];
@@ -630,21 +713,24 @@ function downloadSubmittedFile(submissionId, fileId) {
 
 // ─── JOURNEY PROGRESS TRACKING ───
 
-function loadJourneyProgress() {
-    // Get all necessary data
-    const applications = JSON.parse(localStorage.getItem('applications')) || [];
+async function loadJourneyProgress() {
+    // Applications live in Supabase now, not localStorage — fetch the real data
+    const applications = await fetchUserApplications();
     const submissions = JSON.parse(localStorage.getItem('user_submissions')) || [];
     
     // Count applied opportunities
     const appliedCount = applications.length;
     
-    // Count in-progress (accepted but not reviewed)
-    const inProgressCount = applications.filter(app => 
-        app.status === 'accepted' || app.status === 'approved'
-    ).length;
+    // Completed = submissions that have been reviewed
+    const reviewedSubmissions = submissions.filter(sub => sub.status === 'reviewed');
+    const completedCount = reviewedSubmissions.length;
+    const reviewedTitles = new Set(reviewedSubmissions.map(sub => sub.jobTitle));
     
-    // Count completed (submissions that are reviewed)
-    const completedCount = submissions.filter(sub => sub.status === 'reviewed').length;
+    // In-progress = accepted but NOT already completed/reviewed (avoid double-counting)
+    const inProgressCount = applications.filter(app => 
+        (app.status === 'accepted' || app.status === 'approved') &&
+        !reviewedTitles.has(app.job_title)
+    ).length;
     
     // Update the UI
     document.getElementById('journey-applied').textContent = appliedCount;

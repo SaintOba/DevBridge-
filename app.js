@@ -278,11 +278,46 @@ window.viewAllApplications = function() {
     return applications;
 };
 
+// Check real login session and update AppData.user + nav accordingly
+async function loadAuthState() {
+    if (typeof Auth === 'undefined' || !Auth.isLoggedIn()) {
+        return; // not logged in — AppData.user stays as the default Guest
+    }
+    const profile = await Auth.getProfile();
+    if (profile) {
+        AppData.user.name = profile.name || AppData.user.name;
+        AppData.user.email = profile.email || AppData.user.email;
+        AppData.user.id = profile.id;
+        AppData.user.isAdmin = !!profile.is_admin;
+    }
+}
+
+// Show "Log In" link for guests, or the real name + "Log Out" for logged-in users
+function updateAuthNav() {
+    const loggedIn = typeof Auth !== 'undefined' && Auth.isLoggedIn();
+    document.querySelectorAll('#login-link').forEach(el => {
+        if (loggedIn) {
+            el.textContent = 'Log Out';
+            el.href = '#';
+            el.onclick = function(e) {
+                e.preventDefault();
+                Auth.signOut();
+            };
+        } else {
+            el.textContent = 'Log In';
+            el.href = 'login.html';
+            el.onclick = null;
+        }
+    });
+}
+
 // Initialize app on page load
 document.addEventListener('DOMContentLoaded', async function() {
     await Storage.load();
+    await loadAuthState();
     Storage.setupRealtimeSync();
     updateUserDisplay();
+    updateAuthNav();
     
     if (typeof window.__resolveAppReady === 'function') {
         window.__resolveAppReady();

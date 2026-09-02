@@ -63,11 +63,15 @@ document.addEventListener('DOMContentLoaded', function () {
 // ─── DISPLAY ───
 async function loadUserApplications() {
     try {
-        const userEmail = AppData.user.email;
-        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/applications?email=eq.${encodeURIComponent(userEmail)}&order=created_at.desc`, {
+        const session = Auth.getSession();
+        if (!session || !AppData.user.id) {
+            userApplications = [];
+            return;
+        }
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/applications?user_id=eq.${AppData.user.id}&order=created_at.desc`, {
             headers: {
                 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
-                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM'
+                'Authorization': `Bearer ${session.access_token}`
             }
         });
         
@@ -290,6 +294,12 @@ function submitApplication(e) {
     e.preventDefault();
     console.log('📝 Submit application clicked');
 
+    if (typeof Auth === 'undefined' || !Auth.isLoggedIn()) {
+        alert('Please log in first to apply.');
+        window.location.href = 'login.html';
+        return;
+    }
+
     const name = document.getElementById('apply-name').value.trim();
     const email = document.getElementById('apply-email').value.trim();
     const skillsRaw = document.getElementById('apply-skills').value.trim();
@@ -333,6 +343,7 @@ function submitApplication(e) {
         supabase.addApplication({
             job_id: opp._dbId,  // UUID from Supabase
             job_title: opp.title,
+            user_id: AppData.user.id,
             name: name,
             email: email,
             skills: skills,

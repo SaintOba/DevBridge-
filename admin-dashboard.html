@@ -990,6 +990,9 @@
     <button class="tab-btn" onclick="switchTab('submissions', this)">
       Submissions <span class="tab-badge" id="submissions-count">0</span>
     </button>
+    <button class="tab-btn" onclick="switchTab('techies', this)">
+      Techies <span class="tab-badge" id="techies-count">0</span>
+    </button>
   </div>
 
   <main>
@@ -1135,6 +1138,14 @@
       
       <div id="submissions-list"></div>
     </div>
+
+    <!-- TECHIES TAB -->
+    <div class="tab-panel" id="panel-techies">
+      <div class="section-header">
+        <div class="section-title">👤 Registered Techies <span id="techies-listed-count"></span></div>
+      </div>
+      <div id="techies-list"></div>
+    </div>
   </main>
 </div>
 
@@ -1153,11 +1164,6 @@
 <div id="toast"></div>
 
 <script>
-// ─── CREDENTIALS (change these!) ───
-const ADMIN_CREDENTIALS = [
-  { user: 'admin', pass: 'admin123', name: 'Saint' }
-];
-
 // ─── STATE ───
 let currentFilter = 'all';
 
@@ -1168,57 +1174,61 @@ function setData(key, val) {
   localStorage.setItem(key, JSON.stringify(val));
 }
 
-// ─── LOGIN ───
+// ─── LOGIN (real account, must be flagged is_admin in Supabase) ───
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') handleLogin();
 });
 
 async function handleLogin() {
-  const u = document.getElementById('login-user').value.trim();
-  const p = document.getElementById('login-pass').value;
-  
-  console.log('🔑 Login attempt:', u);
-  
-  const match = ADMIN_CREDENTIALS.find(c => c.user === u && c.pass === p);
-  if (match) {
-    try {
-      sessionStorage.setItem('adminName', match.name);
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      document.getElementById('admin-name-display').textContent = match.name;
-      console.log('✅ Login successful for:', match.name);
-      await renderAll();
-      startAdminPolling();
-    } catch (error) {
-      console.error('❌ Error during login:', error);
-      document.getElementById('login-error').style.display = 'block';
-      document.getElementById('login-error').textContent = '⚠ Error loading dashboard. Check console.';
+  const email = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const errorEl = document.getElementById('login-error');
+  errorEl.style.display = 'none';
+
+  try {
+    await Auth.signIn(email, pass);
+    const profile = await Auth.getProfile();
+
+    if (!profile || !profile.is_admin) {
+      localStorage.removeItem('devbridge_session'); // clear session without redirecting
+      Auth.session = null;
+      errorEl.textContent = '⚠ This account is not an admin.';
+      errorEl.style.display = 'block';
+      return;
     }
-  } else {
-    console.log('❌ Invalid credentials');
-    document.getElementById('login-error').style.display = 'block';
-    document.getElementById('login-pass').value = '';
+
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('admin-name-display').textContent = profile.name || profile.email;
+    await renderAll();
+    startAdminPolling();
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    errorEl.textContent = '⚠ ' + error.message;
+    errorEl.style.display = 'block';
   }
 }
 
 function handleLogout() {
-  sessionStorage.removeItem('adminName');
+  localStorage.removeItem('devbridge_session');
+  Auth.session = null;
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-pass').value = '';
   document.getElementById('login-error').style.display = 'none';
 }
 
-// Check if already "logged in" this session
-window.onload = () => {
-  const name = sessionStorage.getItem('adminName');
-  if (name) {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('admin-name-display').textContent = name;
-    renderAll();
-    // Start polling for updates from Supabase
-    startAdminPolling();
+// Check if already logged in as a real admin
+window.onload = async () => {
+  if (Auth.isLoggedIn()) {
+    const profile = await Auth.getProfile();
+    if (profile && profile.is_admin) {
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('admin-name-display').textContent = profile.name || profile.email;
+      await renderAll();
+      startAdminPolling();
+    }
   }
   // Seed demo data if empty
   seedDemoData();
@@ -1276,6 +1286,7 @@ function renderAll() {
     populateJobFilesSelect();
     renderSubmissions();
   });
+  loadTechies().then(renderTechies);
 }
 
 // ─── LOAD FROM SUPABASE ───
@@ -1743,6 +1754,71 @@ function openJobApps(jobId) {
 function closeModal(e) { if (e.target === document.getElementById('modal-overlay')) closeModalDirect(); }
 function closeModalDirect() { document.getElementById('modal-overlay').classList.remove('open'); renderAll(); }
 
+// ─── TECHIES DIRECTORY + MESSAGING ───
+let supabaseTechies = [];
+
+async function loadTechies() {
+  try {
+    const profiles = await supabaseAdmin.request('GET', '/profiles?order=created_at.desc');
+    supabaseTechies = Array.isArray(profiles) ? profiles : [];
+  } catch (e) {
+    console.warn('Error loading techies:', e);
+    supabaseTechies = [];
+  }
+}
+
+function renderTechies() {
+  const container = document.getElementById('techies-list');
+  document.getElementById('techies-count').textContent = supabaseTechies.length;
+  document.getElementById('techies-listed-count').textContent = `(${supabaseTechies.length})`;
+  if (!supabaseTechies.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">👤</div><div class="empty-text">No registered techies yet.</div></div>`;
+    return;
+  }
+  container.innerHTML = supabaseTechies.map(t => `
+    <div class="job-card">
+      <div>
+        <strong>${t.name || '(no name set)'}</strong><br>
+        <span style="color:var(--muted);font-size:13px;">${t.email}</span><br>
+        <span style="color:var(--muted);font-size:11px;">Joined ${new Date(t.created_at).toLocaleDateString()}</span>
+      </div>
+      <button class="btn-primary" style="margin-top:10px;" onclick="openMessageModal('${t.id}', '${(t.name || t.email || '').replace(/'/g, "\\'")}')">Message</button>
+    </div>
+  `).join('');
+}
+
+function openMessageModal(recipientId, recipientName) {
+  document.getElementById('modal-title').textContent = `Message → ${recipientName}`;
+  document.getElementById('modal-body').innerHTML = `
+    <textarea id="message-content" class="field-input" rows="5" placeholder="Type your message..." style="width:100%;"></textarea>
+    <button class="btn-primary" style="margin-top:12px;" onclick="sendMessage('${recipientId}')">Send Message</button>
+    <div id="message-status" style="margin-top:8px;"></div>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function sendMessage(recipientId) {
+  const content = document.getElementById('message-content').value.trim();
+  const statusEl = document.getElementById('message-status');
+  if (!content) {
+    statusEl.textContent = 'Please type a message.';
+    return;
+  }
+  try {
+    const session = Auth.getSession();
+    await supabaseAdmin.request('POST', '/messages', {
+      sender_id: session.user.id,
+      recipient_id: recipientId,
+      content: content
+    });
+    statusEl.textContent = '✓ Message sent!';
+    setTimeout(() => closeModalDirect(), 1000);
+  } catch (e) {
+    console.error(e);
+    statusEl.textContent = '⚠ Failed to send message.';
+  }
+}
+
 // ─── TABS ───
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1763,11 +1839,14 @@ class SupabaseAdmin {
     }
 
     async request(method, endpoint, data = null) {
+        const token = (typeof Auth !== 'undefined' && Auth.isLoggedIn())
+            ? Auth.getSession().access_token
+            : this.key;
         const options = {
             method,
             headers: {
                 'apikey': this.key,
-                'Authorization': `Bearer ${this.key}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 'Prefer': 'return=representation'
             }
@@ -1815,5 +1894,6 @@ async function syncJobsToSupabase() {
     }
 }
 </script>
+<script src="auth.js"></script>
 </body>
 </html>

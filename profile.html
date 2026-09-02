@@ -19,6 +19,7 @@
             </ul>
             <div class="user-section">
                 <span id="user-name">Guest</span>
+                <a href="login.html" id="login-link" style="margin-right:10px;">Log In</a>
                 <a href="profile.html" class="profile-btn active">Profile</a>
             </div>
         </nav>
@@ -177,6 +178,23 @@
                     </div>
                 </div>
             </div>
+
+
+            <!-- Messages / Inbox Section -->
+            <div class="profile-section card-style">
+                <div class="section-header-profile">
+                    <h2>✉️ Messages</h2>
+                    <span class="section-count" id="messages-count">(0)</span>
+                </div>
+                <p class="section-subtitle">Messages from the DevBridge team</p>
+                <div id="messages-list">
+                    <div class="empty-state-profile">
+                        <div class="empty-icon">📭</div>
+                        <h3>No messages yet</h3>
+                    </div>
+                </div>
+            </div>
+                            
 
             <!-- Applied Opportunities Section -->
             <div class="profile-section card-style">
@@ -372,6 +390,7 @@
     </footer>
 
     <script src="supabase.js"></script>
+    <script src="auth.js"></script>
     <script src="app.js"></script>
     <script src="profile.js"></script>
 </body>

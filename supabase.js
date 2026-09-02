@@ -12,11 +12,14 @@ class SupabaseClient {
     }
 
     async request(method, endpoint, data = null) {
+        const token = (typeof Auth !== 'undefined' && Auth.isLoggedIn())
+            ? Auth.getSession().access_token
+            : this.key;
         const options = {
             method,
             headers: {
                 'apikey': this.key,
-                'Authorization': `Bearer ${this.key}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 'Prefer': 'return=representation'
             }
