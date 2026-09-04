@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Edit profile button
     document.getElementById('edit-profile-btn')?.addEventListener('click', openEditProfileModal);
+    document.getElementById('download-resume-btn')?.addEventListener('click', downloadResume);
     
     // Edit profile form
     document.getElementById('edit-profile-form')?.addEventListener('submit', handleEditProfile);
@@ -99,6 +100,66 @@ async function loadMessages() {
             </div>
         `;
     }
+}
+
+function downloadResume() {
+    if (typeof Auth === 'undefined' || !Auth.isLoggedIn()) {
+        alert('Please log in to download your resume.');
+        window.location.href = 'login.html';
+        return;
+    }
+
+    const name = AppData.user.name || 'DevBridge Member';
+    const email = AppData.user.email || '';
+    const skills = AppData.skills || [];
+    const completedWork = (userSubmissionsCache || []).filter(s => s.status === 'reviewed');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${name} - Resume</title>
+<style>
+    body { font-family: Georgia, serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #222; }
+    h1 { margin-bottom: 4px; }
+    .contact { color: #666; margin-bottom: 24px; }
+    h2 { border-bottom: 2px solid #333; padding-bottom: 4px; margin-top: 32px; }
+    .skill { display: inline-block; background: #eef2ff; color: #3730a3; padding: 4px 10px; border-radius: 6px; margin: 4px 6px 4px 0; font-size: 14px; }
+    .project { margin-bottom: 16px; }
+    .project h3 { margin-bottom: 2px; }
+    .project .date { color: #888; font-size: 13px; }
+    .empty { color: #888; font-style: italic; }
+</style>
+</head>
+<body>
+    <h1>${name}</h1>
+    <div class="contact">${email}</div>
+
+    <h2>Skills</h2>
+    ${skills.length ? skills.map(s => `<span class="skill">${s.name}${s.level ? ' (' + s.level + ')' : ''}</span>`).join('') : '<p class="empty">No skills added yet.</p>'}
+
+    <h2>Completed Projects</h2>
+    ${completedWork.length ? completedWork.map(w => `
+        <div class="project">
+            <h3>${w.job_title}</h3>
+            <div class="date">Completed ${new Date(w.created_at).toLocaleDateString()}</div>
+            ${w.notes ? `<p>${w.notes}</p>` : ''}
+        </div>
+    `).join('') : '<p class="empty">No completed projects yet.</p>'}
+
+    <p style="margin-top:40px; color:#aaa; font-size:12px;">Generated via DevBridge</p>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name.replace(/\s+/g, '_')}_Resume.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 function loadProfileData() {
