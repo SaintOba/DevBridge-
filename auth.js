@@ -56,7 +56,6 @@ const Auth = {
 
     signOut() {
         localStorage.removeItem('devbridge_session');
-        localStorage.removeItem('devbridge_data');
         this.session = null;
         window.location.href = 'login.html';
     },

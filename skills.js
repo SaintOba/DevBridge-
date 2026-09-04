@@ -1,6 +1,10 @@
 // Skills Page JavaScript
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    if (window.AppReady) {
+        await window.AppReady;
+    }
+
     // Load and display skills
     displaySkills();
     updateSkillsCount();
@@ -24,40 +28,67 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-function handleAddSkill(e) {
+async function handleAddSkill(e) {
     e.preventDefault();
+
+    if (typeof Auth === 'undefined' || !Auth.isLoggedIn()) {
+        alert('Please log in to add skills.');
+        window.location.href = 'login.html';
+        return;
+    }
     
     const skillName = document.getElementById('skill-name').value.trim();
     const skillCategory = document.getElementById('skill-category').value;
     const skillLevel = document.getElementById('skill-level').value;
     const skillSource = document.getElementById('skill-source').value.trim();
     const skillDescription = document.getElementById('skill-description').value.trim();
-    
-    // Create skill object
-    const newSkill = {
-        id: Utils.generateId(),
-        name: skillName,
-        category: skillCategory,
-        level: skillLevel,
-        source: skillSource,
-        description: skillDescription,
-        dateAdded: new Date().toISOString()
-    };
-    
-    // Add to app data
-    AppData.skills.push(newSkill);
-    Storage.save();
-    Storage.calculateMatches();
-    
-    // Reset form
-    e.target.reset();
-    
-    // Refresh display
-    displaySkills();
-    updateSkillsCount();
-    
-    // Show notification
-    Utils.showNotification('Skill added successfully!');
+
+    try {
+        const session = Auth.getSession();
+        const response = await fetch('https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/skills', {
+            method: 'POST',
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                user_id: AppData.user.id,
+                name: skillName,
+                category: skillCategory,
+                level: skillLevel,
+                source: skillSource,
+                description: skillDescription
+            })
+        });
+
+        if (!response.ok) {
+            console.error('Failed to save skill:', await response.text());
+            alert('Failed to add skill. Please try again.');
+            return;
+        }
+
+        const [saved] = await response.json();
+        AppData.skills.push({
+            id: saved.id,
+            name: saved.name,
+            category: saved.category,
+            level: saved.level,
+            source: saved.source,
+            description: saved.description,
+            dateAdded: saved.created_at
+        });
+        Storage.calculateMatches();
+
+        e.target.reset();
+        displaySkills();
+        updateSkillsCount();
+        Utils.showNotification('Skill added successfully!');
+    } catch (error) {
+        console.error('Error adding skill:', error);
+        alert('Failed to add skill. Please check your connection and try again.');
+    }
 }
 
 function displaySkills(skillsToShow = null) {
@@ -93,14 +124,32 @@ function displaySkills(skillsToShow = null) {
     `).join('');
 }
 
-function deleteSkill(skillId) {
-    if (confirm('Are you sure you want to delete this skill?')) {
+async function deleteSkill(skillId) {
+    if (!confirm('Are you sure you want to delete this skill?')) return;
+
+    try {
+        const session = Auth.getSession();
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/skills?id=eq.${skillId}`, {
+            method: 'DELETE',
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+
+        if (!response.ok) {
+            alert('Failed to delete skill. Please try again.');
+            return;
+        }
+
         AppData.skills = AppData.skills.filter(s => s.id !== skillId);
-        Storage.save();
         Storage.calculateMatches();
         displaySkills();
         updateSkillsCount();
         Utils.showNotification('Skill deleted successfully!');
+    } catch (error) {
+        console.error('Error deleting skill:', error);
+        alert('Failed to delete skill. Please check your connection and try again.');
     }
 }
 

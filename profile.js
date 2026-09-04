@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     loadProfileSkills();
     loadRecommendedOpportunities();
     await loadWorkFilesAndSubmissions();
+    await loadSubmissionHistory();
     await loadJourneyProgress();
     
     // Edit profile button
@@ -583,7 +584,7 @@ function submitWork(e) {
     
     files.forEach((file, idx) => {
         const reader = new FileReader();
-        reader.onload = function(event) {
+        reader.onload = async function(event) {
             submissionFiles.push({
                 id: 'file_' + Date.now() + '_' + idx,
                 name: file.name,
@@ -595,43 +596,90 @@ function submitWork(e) {
             fileCount++;
             if (fileCount === files.length) {
                 // All files converted, save submission
-                saveSubmission(jobId, jobTitle, submissionFiles, notes);
+                await saveSubmission(jobId, jobTitle, submissionFiles, notes);
             }
         };
         reader.readAsDataURL(file);
     });
 }
 
-function saveSubmission(jobId, jobTitle, files, notes) {
-    const submissions = JSON.parse(localStorage.getItem('user_submissions')) || [];
-    
-    const submission = {
-        id: 'submission_' + Date.now(),
-        jobId: jobId,
-        jobTitle: jobTitle,
-        userName: AppData.user.name,
-        files: files,
-        notes: notes,
-        status: 'submitted',
-        submittedAt: new Date().toISOString()
-    };
-    
-    submissions.push(submission);
-    localStorage.setItem('user_submissions', JSON.stringify(submissions));
-    
-    // Reset form
-    document.getElementById('work-submission-form').reset();
-    document.getElementById('submission-file-preview').innerHTML = '';
-    
-    // Reload submissions
-    loadSubmissionHistory();
-    
-    Utils.showNotification('✓ Work submitted successfully! Admin will review it soon.');
+async function saveSubmission(jobId, jobTitle, files, notes) {
+    const session = Auth.getSession();
+    if (!session || !AppData.user.id) {
+        alert('Please log in to submit work.');
+        window.location.href = 'login.html';
+        return;
+    }
+
+    try {
+        const response = await fetch('https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/submissions', {
+            method: 'POST',
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                job_id: jobId,
+                job_title: jobTitle,
+                user_id: AppData.user.id,
+                name: AppData.user.name,
+                notes: notes,
+                files: files,
+                status: 'submitted'
+            })
+        });
+
+        if (!response.ok) {
+            console.error('Submission failed:', await response.text());
+            alert('Failed to submit work. Please try again.');
+            return;
+        }
+
+        // Reset form
+        document.getElementById('work-submission-form').reset();
+        document.getElementById('submission-file-preview').innerHTML = '';
+        
+        // Reload submissions
+        await loadSubmissionHistory();
+        
+        Utils.showNotification('✓ Work submitted successfully! Admin will review it soon.');
+    } catch (error) {
+        console.error('Error saving submission:', error);
+        alert('Failed to submit work. Please check your connection and try again.');
+    }
 }
 
-function loadSubmissionHistory() {
+let userSubmissionsCache = [];
+
+async function loadSubmissionHistory() {
     const list = document.getElementById('submissions-history-list');
-    const submissions = JSON.parse(localStorage.getItem('user_submissions')) || [];
+    const session = Auth.getSession();
+
+    if (!session || !AppData.user.id) {
+        list.innerHTML = `
+            <div class="empty-state-profile" style="text-align: center; padding: 20px;">
+                <p>Log in to see your submissions.</p>
+            </div>
+        `;
+        return;
+    }
+
+    try {
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/submissions?user_id=eq.${AppData.user.id}&order=created_at.desc`, {
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+        userSubmissionsCache = response.ok ? await response.json() : [];
+    } catch (error) {
+        console.error('Error loading submissions:', error);
+        userSubmissionsCache = [];
+    }
+
+    const submissions = userSubmissionsCache;
     
     if (submissions.length === 0) {
         list.innerHTML = `
@@ -646,9 +694,9 @@ function loadSubmissionHistory() {
         <div class="submission-card-profile">
             <div class="submission-card-header">
                 <div>
-                    <div class="submission-title">${submission.jobTitle}</div>
+                    <div class="submission-title">${submission.job_title}</div>
                     <div class="submission-date">
-                        Submitted: ${new Date(submission.submittedAt).toLocaleDateString()}
+                        Submitted: ${new Date(submission.created_at).toLocaleDateString()}
                     </div>
                 </div>
                 <span class="submission-status-badge ${submission.status}">
@@ -689,8 +737,7 @@ function loadSubmissionHistory() {
 }
 
 function downloadSubmittedFile(submissionId, fileId) {
-    const submissions = JSON.parse(localStorage.getItem('user_submissions')) || [];
-    const submission = submissions.find(s => s.id === submissionId);
+    const submission = userSubmissionsCache.find(s => s.id === submissionId);
     
     if (!submission) {
         alert('Submission not found');
@@ -716,7 +763,7 @@ function downloadSubmittedFile(submissionId, fileId) {
 async function loadJourneyProgress() {
     // Applications live in Supabase now, not localStorage — fetch the real data
     const applications = await fetchUserApplications();
-    const submissions = JSON.parse(localStorage.getItem('user_submissions')) || [];
+    const submissions = userSubmissionsCache;
     
     // Count applied opportunities
     const appliedCount = applications.length;
@@ -724,7 +771,7 @@ async function loadJourneyProgress() {
     // Completed = submissions that have been reviewed
     const reviewedSubmissions = submissions.filter(sub => sub.status === 'reviewed');
     const completedCount = reviewedSubmissions.length;
-    const reviewedTitles = new Set(reviewedSubmissions.map(sub => sub.jobTitle));
+    const reviewedTitles = new Set(reviewedSubmissions.map(sub => sub.job_title));
     
     // In-progress = accepted but NOT already completed/reviewed (avoid double-counting)
     const inProgressCount = applications.filter(app => 

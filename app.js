@@ -311,10 +311,42 @@ function updateAuthNav() {
     });
 }
 
+// Fetch the person's skills from Supabase into AppData.skills (works across devices now)
+async function loadUserSkills() {
+    if (typeof Auth === 'undefined' || !Auth.isLoggedIn() || !AppData.user.id) {
+        return; // guests keep whatever's in AppData.skills (empty by default)
+    }
+    try {
+        const session = Auth.getSession();
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/skills?user_id=eq.${AppData.user.id}&order=created_at.desc`, {
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
+        if (response.ok) {
+            const rows = await response.json();
+            // Map Supabase's snake_case to the shape the rest of the app expects
+            AppData.skills = rows.map(r => ({
+                id: r.id,
+                name: r.name,
+                category: r.category,
+                level: r.level,
+                source: r.source,
+                description: r.description,
+                dateAdded: r.created_at
+            }));
+        }
+    } catch (error) {
+        console.error('Error loading skills:', error);
+    }
+}
+
 // Initialize app on page load
 document.addEventListener('DOMContentLoaded', async function() {
     await Storage.load();
     await loadAuthState();
+    await loadUserSkills();
     Storage.setupRealtimeSync();
     updateUserDisplay();
     updateAuthNav();

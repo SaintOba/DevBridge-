@@ -1284,9 +1284,14 @@ function renderAll() {
     renderJobs();
     renderApps();
     populateJobFilesSelect();
-    renderSubmissions();
   });
-  loadTechies().then(renderTechies);
+  loadTechies().then(() => {
+    renderTechies();
+    loadSubmissions().then(() => {
+      renderSubmissions();
+      renderStats();
+    });
+  });
 }
 
 // ─── LOAD FROM SUPABASE ───
@@ -1316,7 +1321,7 @@ function renderStats() {
   const jobs = supabaseJobs.length > 0 ? supabaseJobs : getData('jobs');
   const apps = supabaseApps.length > 0 ? supabaseApps : getData('applications');
   const files = getData('opportunity_files', {});
-  const submissions = getData('user_submissions', []);
+  const submissions = supabaseSubmissions;
   const pending = apps.filter(a => a.status === 'pending').length;
   const accepted = apps.filter(a => a.status === 'accepted').length;
   const totalFiles = Object.values(files).flat().length;
@@ -1547,8 +1552,20 @@ function filterSubmissions(status, btn) {
   renderSubmissions();
 }
 
+let supabaseSubmissions = [];
+
+async function loadSubmissions() {
+  try {
+    const subs = await supabaseAdmin.request('GET', '/submissions?order=created_at.desc');
+    supabaseSubmissions = Array.isArray(subs) ? subs : [];
+  } catch (e) {
+    console.warn('Error loading submissions:', e);
+    supabaseSubmissions = [];
+  }
+}
+
 function renderSubmissions() {
-  const submissions = getData('user_submissions', []);
+  const submissions = supabaseSubmissions;
   let filtered = submissions;
   if (submissionsFilter !== 'all') {
     filtered = submissions.filter(s => s.status === submissionsFilter);
@@ -1560,13 +1577,16 @@ function renderSubmissions() {
     return;
   }
 
-  container.innerHTML = filtered.map(sub => `
+  container.innerHTML = filtered.map(sub => {
+    const techie = supabaseTechies.find(t => t.id === sub.user_id);
+    const submitterEmail = techie ? techie.email : '';
+    return `
     <div class="submission-card">
       <div class="submission-card-header">
         <div>
-          <div class="submission-user">${sub.userName}</div>
-          <div class="submission-job">📋 ${sub.jobTitle}</div>
-          <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Submitted ${new Date(sub.submittedAt).toLocaleDateString()}</div>
+          <div class="submission-user">${sub.name || 'Unknown'}${submitterEmail ? ` <span style="color:var(--muted); font-weight:400; font-size:12px;">(${submitterEmail})</span>` : ''}</div>
+          <div class="submission-job">📋 ${sub.job_title}</div>
+          <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Submitted ${new Date(sub.created_at).toLocaleDateString()}</div>
         </div>
         <span class="submission-status ${sub.status}">${sub.status}</span>
       </div>
@@ -1591,12 +1611,11 @@ function renderSubmissions() {
         <button class="btn-clear" onclick="deleteSubmission('${sub.id}')" style="background: var(--red); padding: 7px 14px; color: white;">Delete</button>
       </div>
     </div>
-  `).join('');
+  `; }).join('');
 }
 
 function downloadSubmissionFile(submissionId, fileId) {
-  const submissions = getData('user_submissions', []);
-  const submission = submissions.find(s => s.id === submissionId);
+  const submission = supabaseSubmissions.find(s => s.id === submissionId);
   if (!submission) return;
   
   const file = submission.files.find(f => f.id === fileId);
@@ -1611,23 +1630,29 @@ function downloadSubmissionFile(submissionId, fileId) {
   toast(`✓ Downloaded: ${file.name}`);
 }
 
-function updateSubmissionStatus(submissionId, newStatus) {
-  let submissions = getData('user_submissions', []);
-  const sub = submissions.find(s => s.id === submissionId);
-  if (sub) {
-    sub.status = newStatus;
-    setData('user_submissions', submissions);
-    renderAll();
+async function updateSubmissionStatus(submissionId, newStatus) {
+  try {
+    await supabaseAdmin.request('PATCH', `/submissions?id=eq.${submissionId}`, { status: newStatus });
+    await loadSubmissions();
+    renderSubmissions();
     toast('✓ Submission status updated');
+  } catch (e) {
+    console.error(e);
+    toast('Failed to update submission', 'error');
   }
 }
 
-function deleteSubmission(submissionId) {
+async function deleteSubmission(submissionId) {
   if (!confirm('Delete this submission?')) return;
-  let submissions = getData('user_submissions', []).filter(s => s.id !== submissionId);
-  setData('user_submissions', submissions);
-  renderAll();
-  toast('Submission deleted', 'error');
+  try {
+    await supabaseAdmin.request('DELETE', `/submissions?id=eq.${submissionId}`);
+    await loadSubmissions();
+    renderSubmissions();
+    toast('Submission deleted', 'error');
+  } catch (e) {
+    console.error(e);
+    toast('Failed to delete submission', 'error');
+  }
 }
 
 function renderJobs() {
@@ -1776,15 +1801,46 @@ function renderTechies() {
     return;
   }
   container.innerHTML = supabaseTechies.map(t => `
-    <div class="job-card">
+    <div class="job-card" onclick="openTechieDetail('${t.id}')" style="cursor:pointer;">
       <div>
         <strong>${t.name || '(no name set)'}</strong><br>
         <span style="color:var(--muted);font-size:13px;">${t.email}</span><br>
         <span style="color:var(--muted);font-size:11px;">Joined ${new Date(t.created_at).toLocaleDateString()}</span>
       </div>
-      <button class="btn-primary" style="margin-top:10px;" onclick="openMessageModal('${t.id}', '${(t.name || t.email || '').replace(/'/g, "\\'")}')">Message</button>
+      <button class="btn-primary" style="margin-top:10px;" onclick="event.stopPropagation(); openMessageModal('${t.id}', '${(t.name || t.email || '').replace(/'/g, "\\'")}')">Message</button>
     </div>
   `).join('');
+}
+
+function openTechieDetail(techieId) {
+  const techie = supabaseTechies.find(t => t.id === techieId);
+  if (!techie) return;
+  const apps = supabaseApps.filter(a => a.user_id === techieId);
+  const subs = supabaseSubmissions.filter(s => s.user_id === techieId);
+
+  document.getElementById('modal-title').textContent = techie.name || techie.email;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="margin-bottom:16px;">
+      <div style="color:var(--muted);font-size:13px;">${techie.email}</div>
+      <div style="color:var(--muted);font-size:11px;">Joined ${new Date(techie.created_at).toLocaleDateString()}</div>
+    </div>
+    <div class="section-title" style="font-size:14px;margin-bottom:8px;">Applications (${apps.length})</div>
+    ${apps.length ? apps.map(a => `
+      <div style="border:1px solid #333;border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+        <strong>${a.job_title}</strong>
+        <span class="submission-status ${a.status}" style="margin-left:8px;">${a.status}</span>
+      </div>
+    `).join('') : `<div style="color:var(--muted);font-size:13px;margin-bottom:16px;">No applications yet.</div>`}
+    <div class="section-title" style="font-size:14px;margin:16px 0 8px;">Submissions (${subs.length})</div>
+    ${subs.length ? subs.map(s => `
+      <div style="border:1px solid #333;border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+        <strong>${s.job_title}</strong>
+        <span class="submission-status ${s.status}" style="margin-left:8px;">${s.status}</span>
+      </div>
+    `).join('') : `<div style="color:var(--muted);font-size:13px;">No submissions yet.</div>`}
+    <button class="btn-primary" style="margin-top:16px;" onclick="openMessageModal('${techie.id}', '${(techie.name || techie.email || '').replace(/'/g, "\\'")}')">Message ${techie.name || 'this person'}</button>
+  `;
+  document.getElementById('modal-overlay').classList.add('open');
 }
 
 function openMessageModal(recipientId, recipientName) {
