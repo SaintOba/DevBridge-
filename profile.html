@@ -187,13 +187,18 @@
                     <h2>✉️ Messages</h2>
                     <span class="section-count" id="messages-count">(0)</span>
                 </div>
-                <p class="section-subtitle">Messages from the DevBridge team</p>
+                <p class="section-subtitle">Messages between you and the DevBridge team</p>
                 <div id="messages-list">
                     <div class="empty-state-profile">
                         <div class="empty-icon">📭</div>
                         <h3>No messages yet</h3>
                     </div>
                 </div>
+                <form id="message-reply-form" style="margin-top:16px; display:flex; gap:8px;">
+                    <textarea id="message-reply-content" class="field-input" rows="2" placeholder="Write a message..." style="flex:1; resize:vertical;" required></textarea>
+                    <button type="submit" class="btn-primary" style="align-self:flex-end;">Send</button>
+                </form>
+                <div id="message-reply-status" style="margin-top:6px; font-size:0.85rem; color:var(--text-light);"></div>
             </div>
                             
 

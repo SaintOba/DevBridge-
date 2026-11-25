@@ -4795,10 +4795,20 @@ footer a:hover{color:#fff}
   .step{border-right:0;border-bottom:2px solid #000}
   .step:last-of-type{border-bottom:0}
 }
+@media (max-width:768px){
+  /* The original stylesheet sets .nav-links{display:none} below 768px
+     with no hamburger menu to bring them back — that's why the nav links
+     vanished entirely on phones. Force them visible again here. */
+  .nav-links{display:flex!important}
+}
 @media (max-width:640px){
-  nav{padding:.8rem 1rem;flex-wrap:wrap;gap:.6rem 1rem}
-  .nav-links{order:3;width:100%;overflow-x:auto;flex-wrap:nowrap;gap:0}
-  .nav-links a{white-space:nowrap;padding:.5rem .7rem}
+  nav{padding:.8rem 1rem;flex-wrap:wrap;gap:.6rem 1rem;position:relative}
+  /* fade hint so it's clear the nav links scroll sideways instead of
+     just getting cut off at the edge */
+  nav::after{content:"";position:absolute;right:0;top:3.2rem;bottom:0;width:1.5rem;background:linear-gradient(to right,transparent,#000 85%);pointer-events:none}
+  .nav-links{order:3;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;gap:0;display:flex!important;scrollbar-width:none}
+  .nav-links::-webkit-scrollbar{display:none}
+  .nav-links a{white-space:nowrap;padding:.5rem .6rem;font-size:.88rem}
   .section{padding:3.5rem 0}
   .container{padding:0 1.1rem}
   .opportunities-grid,.opportunities-cards-grid,.skills-grid{grid-template-columns:1fr}
@@ -4818,7 +4828,11 @@ footer a:hover{color:#fff}
 .filters-header{border-bottom:2px solid #000}
 
 /* ---------- fixes from review ---------- */
-html,body{overflow-x:hidden}
+/* overflow-x:hidden on BODY (not html) breaks position:sticky on the
+   header in most browsers, which is why the nav was scrolling away —
+   constraining it on html alone still stops the sideways scroll without
+   touching the header's scrolling context. */
+html{overflow-x:hidden}
 .stats-showcase,.testimonials{margin:0!important;padding-left:0;padding-right:0}
 .testimonials{padding-top:5.5rem;padding-bottom:5.5rem}
 .section-intro,.section-header{margin-left:0!important;margin-right:auto!important;text-align:left!important}

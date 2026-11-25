@@ -153,15 +153,14 @@ create policy "messages_select_participant"
   on public.messages for select
   using (auth.uid() = sender_id or auth.uid() = recipient_id);
 
--- Only admins can send messages right now — the only messaging UI that
--- exists is on the admin dashboard (profile.js only reads messages, it has
--- no reply box). Loosen this to "auth.uid() = sender_id" later if/when a
--- techie-side reply feature is built.
+-- Either side can send, as long as they send as themselves — techies now
+-- have a reply box on their profile page and admins can message from the
+-- dashboard, so this is open both ways again.
 drop policy if exists "messages_insert_as_self" on public.messages; -- old name, in case you ran an earlier version of this file
-drop policy if exists "messages_insert_admin_only" on public.messages;
-create policy "messages_insert_admin_only"
+drop policy if exists "messages_insert_admin_only" on public.messages; -- old name, from when this was admin-only
+create policy "messages_insert_as_self"
   on public.messages for insert
-  with check (auth.uid() = sender_id and public.is_admin());
+  with check (auth.uid() = sender_id);
 
 -- ---------------------------------------------------------------------------
 -- PROFILES — readable by anyone (needed for the admin directory and for

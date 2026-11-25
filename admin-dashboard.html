@@ -1864,9 +1864,46 @@ function openTechieDetail(techieId) {
         <span class="submission-status ${s.status}" style="margin-left:8px;">${escapeHTML(s.status)}</span>
       </div>
     `).join('') : `<div style="color:var(--muted);font-size:13px;">No submissions yet.</div>`}
-    <button class="btn-primary" style="margin-top:16px;" onclick="openMessageModal('${techie.id}', '${escapeForJsAttr(techie.name || techie.email || '')}')">Message ${escapeHTML(techie.name || 'this person')}</button>
+    <div class="section-title" style="font-size:14px;margin:16px 0 8px;">Messages</div>
+    <div id="techie-message-thread" style="margin-bottom:12px;">
+      <div style="color:var(--muted);font-size:13px;">Loading…</div>
+    </div>
+    <textarea id="techie-message-reply" class="field-input" rows="3" placeholder="Type a reply..." style="width:100%;"></textarea>
+    <button class="btn-primary" style="margin-top:8px;" onclick="sendMessage('${techie.id}', true)">Send Message</button>
+    <div id="techie-message-status" style="margin-top:6px;font-size:12px;"></div>
   `;
   document.getElementById('modal-overlay').classList.add('open');
+  loadMessageThread(techie.id);
+}
+
+// Shows the full back-and-forth between the logged-in admin and one techie,
+// not just outgoing messages — so replies they send are actually visible
+// here instead of only in the Supabase dashboard.
+async function loadMessageThread(techieId) {
+  const threadEl = document.getElementById('techie-message-thread');
+  if (!threadEl) return;
+  try {
+    const session = Auth.getSession();
+    const adminId = session?.user?.id;
+    const filter = `or=(and(sender_id.eq.${adminId},recipient_id.eq.${techieId}),and(sender_id.eq.${techieId},recipient_id.eq.${adminId}))`;
+    const messages = await supabaseAdmin.request('GET', `/messages?${filter}&order=created_at.asc`);
+    if (!messages.length) {
+      threadEl.innerHTML = `<div style="color:var(--muted);font-size:13px;">No messages yet.</div>`;
+      return;
+    }
+    threadEl.innerHTML = messages.map(m => {
+      const fromAdmin = m.sender_id === adminId;
+      return `
+        <div style="border:1px solid #333;border-radius:8px;padding:8px 10px;margin-bottom:6px;${fromAdmin ? 'margin-left:1.5rem;' : 'margin-right:1.5rem;'}">
+          <div style="color:var(--muted);font-size:11px;margin-bottom:4px;">${fromAdmin ? 'You' : 'Them'} • ${new Date(m.created_at).toLocaleString()}</div>
+          <div style="font-size:13px;">${escapeHTML(m.content)}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error('Error loading message thread:', e);
+    threadEl.innerHTML = `<div style="color:var(--muted);font-size:13px;">Could not load messages.</div>`;
+  }
 }
 
 function openMessageModal(recipientId, recipientName) {
@@ -1879,9 +1916,13 @@ function openMessageModal(recipientId, recipientName) {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
-async function sendMessage(recipientId) {
-  const content = document.getElementById('message-content').value.trim();
-  const statusEl = document.getElementById('message-status');
+// fromDetail=true means this was sent from the techie-detail panel's reply
+// box (which has its own textarea/status ids and should refresh the thread
+// in place), vs. the quick-send modal (which just closes on success).
+async function sendMessage(recipientId, fromDetail = false) {
+  const contentEl = document.getElementById(fromDetail ? 'techie-message-reply' : 'message-content');
+  const statusEl = document.getElementById(fromDetail ? 'techie-message-status' : 'message-status');
+  const content = contentEl.value.trim();
   if (!content) {
     statusEl.textContent = 'Please type a message.';
     return;
@@ -1893,8 +1934,14 @@ async function sendMessage(recipientId) {
       recipient_id: recipientId,
       content: content
     });
-    statusEl.textContent = '✓ Message sent!';
-    setTimeout(() => closeModalDirect(), 1000);
+    if (fromDetail) {
+      contentEl.value = '';
+      statusEl.textContent = '';
+      await loadMessageThread(recipientId);
+    } else {
+      statusEl.textContent = '✓ Message sent!';
+      setTimeout(() => closeModalDirect(), 1000);
+    }
   } catch (e) {
     console.error(e);
     statusEl.textContent = '⚠ Failed to send message.';

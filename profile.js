@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     await loadMessages();
+    document.getElementById('message-reply-form')?.addEventListener('submit', handleSendMessage);
     await loadAppliedOpportunities();
     loadProfileData();
     loadProfileSkills();
@@ -49,7 +50,10 @@ async function loadMessages() {
     }
 
     try {
-        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/messages?recipient_id=eq.${AppData.user.id}&order=created_at.desc`, {
+        // Both sides of the conversation: messages you received AND messages
+        // you sent, not just an inbox of what was sent to you.
+        const filter = `or=(recipient_id.eq.${AppData.user.id},sender_id.eq.${AppData.user.id})`;
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/messages?${filter}&order=created_at.asc`, {
             headers: {
                 'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
                 'Authorization': `Bearer ${session.access_token}`
@@ -57,7 +61,8 @@ async function loadMessages() {
         });
         const messages = response.ok ? await response.json() : [];
 
-        if (countEl) countEl.textContent = `(${messages.length})`;
+        const unreadCount = messages.filter(m => m.recipient_id === AppData.user.id && !m.is_read).length;
+        if (countEl) countEl.textContent = `(${unreadCount})`;
 
         if (!messages.length) {
             container.innerHTML = `
@@ -69,17 +74,20 @@ async function loadMessages() {
             return;
         }
 
-        container.innerHTML = messages.map(m => `
-            <div style="border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; margin-bottom:12px; ${m.is_read ? '' : 'background:#f0f9ff; border-color:#bae6fd;'}">
+        container.innerHTML = messages.map(m => {
+            const fromMe = m.sender_id === AppData.user.id;
+            return `
+            <div style="border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; margin-bottom:12px; ${fromMe ? 'margin-left:2rem;' : 'margin-right:2rem;'} ${!fromMe && !m.is_read ? 'background:#f0f9ff; border-color:#bae6fd;' : ''}">
                 <div style="font-size:12px; color:#666; margin-bottom:6px;">
-                    ${new Date(m.created_at).toLocaleString()} ${m.is_read ? '' : '• <strong style="color:#0369a1;">New</strong>'}
+                    <strong>${fromMe ? 'You' : 'DevBridge Team'}</strong> • ${new Date(m.created_at).toLocaleString()} ${!fromMe && !m.is_read ? '• <strong style="color:#0369a1;">New</strong>' : ''}
                 </div>
                 <div>${escapeHTML(m.content)}</div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
-        // Mark unread messages as read
-        const unread = messages.filter(m => !m.is_read);
+        // Mark unread messages as read (only ones sent TO you)
+        const unread = messages.filter(m => m.recipient_id === AppData.user.id && !m.is_read);
         if (unread.length) {
             await Promise.all(unread.map(m => fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/messages?id=eq.${m.id}`, {
                 method: 'PATCH',
@@ -99,6 +107,65 @@ async function loadMessages() {
                 <h3>Could not load messages</h3>
             </div>
         `;
+    }
+}
+
+// Looks up an admin account to send a message to. If there are several
+// admins, this just picks one — good enough while DevBridge has a single
+// admin running it; revisit if that changes.
+async function findAdminRecipient(session) {
+    const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/profiles?is_admin=eq.true&select=id&limit=1`, {
+        headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+            'Authorization': `Bearer ${session.access_token}`
+        }
+    });
+    if (!response.ok) return null;
+    const rows = await response.json();
+    return rows[0]?.id || null;
+}
+
+async function handleSendMessage(e) {
+    e.preventDefault();
+    const textarea = document.getElementById('message-reply-content');
+    const statusEl = document.getElementById('message-reply-status');
+    const content = textarea.value.trim();
+    if (!content) return;
+
+    const session = Auth.getSession();
+    if (!session || !AppData.user.id) {
+        statusEl.textContent = 'Please log in to send a message.';
+        return;
+    }
+
+    statusEl.textContent = 'Sending…';
+    try {
+        const recipientId = await findAdminRecipient(session);
+        if (!recipientId) {
+            statusEl.textContent = 'Could not find anyone to message right now.';
+            return;
+        }
+        const response = await fetch(`https://fsuhpjlyzojioezdjjld.supabase.co/rest/v1/messages`, {
+            method: 'POST',
+            headers: {
+                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzdWhwamx5em9qaW9lemRqamxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMjIxNDksImV4cCI6MjA5Mjc5ODE0OX0.IkNVBJrpPKCuW9cKfuRNMWCa2mqjuerYWNUhuDdunlM',
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({
+                sender_id: AppData.user.id,
+                recipient_id: recipientId,
+                content
+            })
+        });
+        if (!response.ok) throw new Error('Send failed');
+        textarea.value = '';
+        statusEl.textContent = '';
+        await loadMessages();
+    } catch (err) {
+        console.error('Error sending message:', err);
+        statusEl.textContent = 'Could not send that message — try again.';
     }
 }
 
